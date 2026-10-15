@@ -1,0 +1,250 @@
+---
+title: ""
+author: "Sandra"
+date: "2025-04-06"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Part A: KNN vs lasso logistic regression
+
+##three relevant and three irrelevant predictors
+
+```{r}
+library(readr)
+data_set <- read_csv("Data.csv")
+train <- data_set[1:5000, ]
+test <- data_set[5001:10000, ]
+```
+
+```{r}
+library(caret)
+# Original analysis used a different seed, so exact numbers may differ slightly
+set.seed(123)
+train_new = train[,c("Y","X1","X2","X3","X4","X5","X6")]
+test_new = test[,c("Y","X1","X2","X3","X4","X5","X6")]
+train_new$Y = as.factor(train_new$Y)
+test_new$Y = as.factor(test_new$Y)
+train_control =trainControl(method ="cv", number= 10)
+k_knn = seq(1,20,2)
+knn_model = train(Y~ X1+X2+X3+X4+X5+X6,data =train_new,method= "knn", tuneGrid= data.frame(k = k_knn),trControl =train_control,preProcess= c("center","scale"))
+print(knn_model$bestTune)
+print(knn_model$results)
+```
+
+```{r}
+cf <- confusionMatrix(predict(knn_model, newdata = test_new), test_new$Y)
+cf
+```
+
+Lasso logistic regression
+
+```{r}
+library(glmnet)
+x = model.matrix(Y ~ X1+X2+X3+X4+X5+X6, data = train_new)
+y = train_new$Y
+x_test <- model.matrix(Y ~ X1+X2+X3+X4+X5+X6, data = test_new)
+y_test <- test_new$Y
+set.seed(42)
+lasso_mod <- cv.glmnet(x = x, y = y, alpha = 1, family = "binomial",nfolds = 10)
+lasso_mod$lambda.min
+lasso_pred = predict(lasso_mod, newx = x_test,s = "lambda.min", type = "response")
+lasso_lr_class = ifelse(lasso_pred > 0.5, 1, 0)
+accuracy = mean(lasso_lr_class== y_test)
+accuracy
+```
+
+##all predictors
+
+```{r}
+set.seed(123)
+train$Y = as.factor(train$Y)
+test$Y = as.factor(test$Y)
+train_control <-trainControl(method ="cv", number= 10)
+k_knn = seq(1,20,2)
+knn_model_full <-train(Y~.,data =train,method= "knn", tuneGrid= data.frame(k = k_knn),trControl =train_control,preProcess= c("center","scale"))
+print(knn_model_full$bestTune)
+print(knn_model_full$results)
+```
+
+```{r}
+cf_full <- confusionMatrix(predict(knn_model_full, newdata = test), test$Y)
+cf_full
+```
+
+Lasso logistic regression
+
+```{r}
+x <- model.matrix(Y ~ ., data = train)
+y <- train$Y
+x_test <- model.matrix(Y ~ ., data = test)
+y_test <- test$Y
+set.seed(42)
+lasso_mod <- cv.glmnet(x = x, y = y, alpha = 1, family = "binomial",nfolds = 10)
+lasso_mod$lambda.min
+lasso_pred = predict(lasso_mod, newx = x_test,s = "lambda.min", type = "response")
+lasso_lr_class = ifelse(lasso_pred > 0.5, 1, 0)
+accuracy = mean(lasso_lr_class== y_test)
+accuracy
+```
+
+#Elastic net vs GAM
+
+```{r}
+MH_data <- read.table("MHpredict.csv", sep = ",", header = TRUE)
+```
+
+```{r}
+summary(MH_data)
+```
+
+```{r}
+hist(MH_data$dep_sev_fu,breaks = 15)
+```
+
+```{r}
+set.seed(123)
+n = nrow(MH_data)
+indexB = sample(1:n, size = 500)
+test_B = MH_data[indexB, ]
+train_B = MH_data[-indexB,]
+```
+
+Elastic net
+
+```{r}
+library(glmnet)
+set.seed(123)
+xb = model.matrix(dep_sev_fu ~ .-1,train_B)
+x_testb = model.matrix(dep_sev_fu ~.-1,test_B)
+yb = train_B$dep_sev_fu
+elastic_model = cv.glmnet(x = xb,y = yb,alpha = 0.5)
+elastic_model
+plot(elastic_model)
+```
+
+```{r}
+cors <- cor(xb)
+diag(cors) <- NA
+hist(cors, main = "Observed correlations", cex.lab = .7, cex.axis = .7,
+     cex.main = .7)
+```
+
+```{r}
+elastic_model$lambda.min
+```
+
+```{r}
+elastic_coefs <- coef(elastic_model, s = "lambda.min")
+elastic_coefs[elastic_coefs[ , 1] != 0, ]
+```
+
+```{r}
+coef(elastic_model, s = "lambda.min")
+```
+
+```{r}
+e_preds <- predict(elastic_model, s = "lambda.min", newx = x_testb)
+MSE = mean((e_preds - test_B$dep_sev_fu)^2)
+MSE
+```
+
+```{r}
+MSE_max=var(test_B$dep_sev_fu)
+R2 = 1 - MSE/MSE_max
+R2
+```
+
+GAM
+
+```{r}
+library(mgcv)
+```
+
+```{r}
+plot(MH_data[ , c("Age", "aedu", "IDS", "BAI","FQ","LCImax","AO")])
+```
+
+```{r}
+gam_model = gam(dep_sev_fu~s(Age)+aedu+s(IDS)+s(BAI)+s(FQ)+s(LCImax)+s(AO)+Sexe+pedigree+alcohol+bTypeDep+bSocPhob+bGAD+bPanic +bAgo +RemDis+ sample+ ADuse +PsychTreat
+, data = train_B)
+```
+
+```{r}
+summary(gam_model)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(gam_model, residuals = TRUE)
+```
+
+```{r}
+pred = predict(gam_model, newdata = test_B,type = "response")
+MSEg = mean((pred - test_B$dep_sev_fu)^2)
+MSEg
+
+yvar = var(test_B$dep_sev_fu)
+R2g = 1 - (MSEg/yvar)
+R2g
+```
+
+```{r}
+gam.check(gam_model)
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
