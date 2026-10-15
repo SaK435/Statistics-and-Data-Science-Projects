@@ -1,6 +1,6 @@
 ---
 title: "Predicting Depression Severity"
-author: "Sandra Kizhakkathra"
+author: "Sandra"
 date: "2025-05-14"
 output: pdf_document
 ---
