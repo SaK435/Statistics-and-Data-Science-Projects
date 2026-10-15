@@ -1,0 +1,321 @@
+---
+title: "Predicting Depression Severity"
+author: "Sandra Kizhakkathra"
+date: "2025-05-14"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Part A: Predicting depression severity (supervised learning)
+
+```{r}
+MHpredict = read.csv("MHpredict.csv")
+```
+
+Checking if the variable are factor
+```{r}
+sapply(MHpredict, class)
+```
+Converting character to factors
+```{r}
+MHpredict[] <- lapply(MHpredict, function(i) {
+  if (is.character(i)) factor(i) else i
+})
+```
+
+```{r}
+sapply(MHpredict, class)
+```
+Splittig training and testing data
+```{r}
+set.seed(123)#Original analysis used a different seed, so exact numbers may differ slightly
+library(e1071)
+library(caret)
+library(ggplot2)
+library(gbm)
+
+train_index <- sample(1:nrow(MHpredict), size = 1000)
+test_index <- which(!(1:nrow(MHpredict) %in% train_index))
+
+test = MHpredict[test_index, ]
+train = MHpredict[train_index, ]
+```
+
+Random Forest
+
+To choose value of mtry, we use cross validation.
+```{r}
+set.seed(123)
+library(caret)
+train_control <-trainControl(method ="cv", number= 5)
+cv_rf <- train(
+  dep_sev_fu ~ ., 
+  data = train,
+  method = "rf", 
+  trControl = train_control,
+  tuneGrid = data.frame(mtry = seq(4,10,1)),
+  ntree = 500
+)
+print(cv_rf$results)
+```
+Theoretically, the value should be square root of number of predictors. So, it should be square root of 20 which is 4. But we can also use cross validation to find the best mtry value. I used mtry  = 5 here.
+
+```{r}
+set.seed(123)
+library(randomForest)
+rf = randomForest(dep_sev_fu ~ ., data = train,  mtry = 5, ntree = 500, importance = TRUE)
+```
+
+error vs number of trees plot
+```{r}
+plot(rf, cex.lab = .7, cex.axis = .7, cex.main = .7)
+```
+
+```{r}
+importance(rf)
+```
+Variable Importances
+```{r}
+varImpPlot(rf,cex=.6,main="Variable importances for the random forest")
+```
+Partial Dependence Plot 
+```{r}
+ par(mfrow = c(1, 3))
+ partialPlot(rf, x.var = "IDS", pred.data = train, cex.main = .7)
+ partialPlot(rf, x.var = "AO", pred.data = train, cex.main = .7)
+ partialPlot(rf, x.var = "LCImax", pred.data = train, cex.main = .7)
+```
+Calculating MSE value
+```{r}
+yhat.rf = predict(rf, newdata = test)
+mse = mean((yhat.rf- test$dep_sev_fu)^2)
+mse
+```
+Calculating R2 value
+```{r}
+yvar = var(test$dep_sev_fu)
+R2= 1 - (mse/yvar)
+R2
+```
+
+
+```{r}
+pat_dat <- read.table("Patient.csv", sep = ",", header = TRUE, stringsAsFactors = TRUE)
+```
+
+checking if there are any missing coloumns
+```{r}
+setdiff(names(train), names(pat_dat))
+```
+```{r}
+sapply(pat_dat, class)
+```
+
+```{r}
+sapply(train, class)
+```
+Mkaing sure all the factor variables have same levels
+```{r}
+for(i in names(train)) {
+  if(is.factor(train[[i]])) {
+    levels(pat_dat[[i]]) <- levels(train[[i]])
+  } 
+}
+```
+## Prediction for a new patient
+Predicting the output for David
+```{r}
+pred <- predict(rf, newdata = pat_dat)
+print(pred)
+```
+Bonus part: calculating the confidence interval
+```{r}
+pred.rf <- predict(rf, pat_dat, predict.all=TRUE)
+pred.rf.int <- t(apply( pred.rf$individual, 1, function(x){
+                 c( mean(x) + c(-1.96,1.96)*sd(x))})) 
+pred.rf.int
+```
+**Part B**
+# Part B: Personality data, PCA and clustering (unsupervised learning)
+
+```{r}
+library(ISLR2)
+library(nFactors)
+library(GPArotation)
+library(psych)
+library(EFA.dimensions)
+data = read.csv("data.US - Copy.csv")
+```
+
+```{r}
+str(data)
+```
+Doing PCA here, only selecting variables.
+```{r}
+data_US = data[, 2:31]
+pca_result = prcomp(data_US,scale. = FALSE)
+```
+
+1. Kaiser's Rule
+```{r}
+ev = eigen(cor(data_US))
+ev$values
+```
+
+```{r}
+sum(ev$values>1)
+```
+2. Scree plot and proportion of variance explained
+
+```{r}
+prop_var_expl= summary(pca_result)$importance[2, ]
+cumul_prop_var_expl=summary(pca_result)$importance[3,]
+```
+
+```{r}
+par(mfrow = c(1,2))
+plot(prop_var_expl,type="b",xlab="Component number",
+ ylab="Proportion variance explained",ylim=c(0,1))
+plot(cumul_prop_var_expl,type="b",xlab="Number of components",
+ ylab="Cumulative prop.var.expl.",ylim=c(0,1))
+```
+
+Parallel Analysis
+
+```{r}
+ap <- parallel(subject=nrow(data_US), var=ncol(data_US), rep=1000)
+nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
+plotnScree(nS,main="")
+```
+
+```{r}
+nS$Components$noc
+```
+Velicer’s MAP test 
+
+```{r}
+ MAP(data_US, corkind='pearson', verbose=TRUE)
+```
+Loading for the first 5 components
+Sorting the values for PC1
+```{r}
+loading = round(pca_result$rotation[,1:5], 3)
+sort(loading[,1], decreasing = TRUE)
+```
+Sorting the values for PC2
+```{r}
+sort(loading[,2], decreasing = TRUE)
+```
+Sorting the values for PC3
+```{r}
+sort(loading[,3], decreasing = TRUE)
+
+```
+Sorting the values for PC4
+```{r}
+sort(loading[,4], decreasing = TRUE)
+
+```
+Sorting the values for PC5
+```{r}
+sort(loading[,5], decreasing = TRUE)
+```
+Rotating componenets using varimax
+```{r}
+varimax(pca_result$rotation[,1:5])
+```
+Proportion of variance explained
+```{r}
+prop_var_expl[1:5]
+```
+Cumulative proportion
+```{r}
+cumul_prop_var_expl[5]
+```
+K means clustering
+```{r}
+data_new = as.data.frame(pca_result$x[,1:5]) 
+colnames(data_new)
+set.seed(123)
+nClustersMax = 20
+Prop_expl_vector= matrix(-9999,1,nClustersMax)
+SSerrors_vector= matrix(-9999,1, nClustersMax)
+kmeans_res= list()
+for(counter in 1:nClustersMax){
+  kmeans_res[[counter]]=kmeans(data_new,counter,nstart=500,iter.max=100)
+  prop_expl=(kmeans_res[[counter]]$totss-kmeans_res[[counter]]$tot.withinss)/kmeans_res[[counter]]$totss
+  Prop_expl_vector[counter]=prop_expl
+  SSerr= sum((data_new-kmeans_res[[counter]]$centers[kmeans_res[[counter]]$cluster,])^2)
+  SSerrors_vector[counter]=SSerr
+  rm(prop_expl,SSerr)
+}
+```
+
+```{r}
+#scree-typeofplots
+par(mfrow=c(1,2))
+plot(1:nClustersMax,Prop_expl_vector,type="b",xlab="number of clusters",ylab="Proportion explained")
+plot(1:nClustersMax,SSerrors_vector,type="b",xlab="number of clusters",ylab="SSerror")
+```
+
+```{r}
+kmeans_res[[4]]$size
+```
+
+```{r}
+kmeans_res[[4]]$centers
+```
+
+```{r}
+par(mfrow=c(2,3))
+plot(data_new[, c(1,2)],col=kmeans_res[[4]]$cluster,pch=18,cex=1)
+plot(data_new[, c(1,3)],col=kmeans_res[[4]]$cluster,pch=18,cex=1)
+plot(data_new[, c(2,3)],col=kmeans_res[[4]]$cluster,pch=18,cex=1)
+plot(data_new[, c(1,2)],col=kmeans_res[[5]]$cluster,pch=18,cex=1)
+plot(data_new[, c(1,3)],col=kmeans_res[[5]]$cluster,pch=18,cex=1)
+plot(data_new[, c(2,3)],col=kmeans_res[[5]]$cluster,pch=18,cex=1)
+```
+Performing hierarchical clustering
+Complete Linkage
+```{r}
+hclust_complete = hclust(dist(data_new) , method="complete")
+plot(hclust_complete, main = "Complete Linkage",
+ xlab = "", sub = "", cex = .9)
+abline(h = 12.5, col = "red")
+rect.hclust(hclust_complete , k = 4, border = 2:6)
+hclust_complete_cut = cutree(hclust_complete, h=5)
+```
+Single Linkage
+```{r}
+hclust_single = hclust(dist(data_new) , method="single")
+plot(hclust_single, main = "Single Linkage",
+ xlab = "", sub = "", cex = .9)
+hclust_single_cut = cutree(hclust_single, h=5)
+```
+Average Linkage
+```{r}
+hclust_average = hclust(dist(data_new) , method="average")
+plot(hclust_average, main = "Average Linkage",
+ xlab = "", sub = "", cex = .9)
+hclust_average_cut = cutree(hclust_average, h=5)
+```
+
+```{r}
+hclust_complete_cut= cutree(hclust_complete,k = 4)
+hclust_average_cut= cutree(hclust_average,h=5)
+hclust_single_cut= cutree(hclust_single,h=5)
+```
+
+Calculating the average of each components for each cluster
+```{r}
+data_new$cluster = as.factor(kmeans_res[[4]]$cluster)
+cluster_mean<- aggregate(. ~ cluster, data = data_new, FUN = mean)
+cluster_mean
+
+```
+
+
+
