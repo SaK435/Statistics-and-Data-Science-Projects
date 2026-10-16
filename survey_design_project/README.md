@@ -36,8 +36,8 @@ Full details: [02_lessons_learned_peer_review_and_cognitive_interview.pdf](02_le
 - Answers could depend on whether elections took place recently
 
 ## Files
-- [01_research_design.pdf](01_research_design.pdf): topic, research question, operationalization, planned analyses and constraints
-- [02_lessons_learned_peer_review_and_cognitive_interview.pdf](02_lessons_learned_peer_review_and_cognitive_interview.pdf)
+- [01_research_design.pdf](01_research_design.pdf): topic, research question, operationalization, planned analyses and constraints (to be added)
+- [02_lessons_learned_peer_review_and_cognitive_interview.pdf](02_lessons_learned_peer_review_and_cognitive_interview.pdf) (to be added)
 - `figures/`: path diagram and construct operationalization
 - Final questionnaire: to be added
 
